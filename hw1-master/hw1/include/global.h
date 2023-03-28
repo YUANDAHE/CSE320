@@ -95,32 +95,6 @@ char *diff_filename;
  */
 
 #define HUNK_MAX 512
-
-/*
- * Lib Functions are required by the test cases
- * These will be defined in the static library fliki.a
- */
-
-extern void lib_hunk_show(HUNK *hp, FILE *out);
-extern int lib_validargs(int argc, char **argv);
-extern int lib_patch(FILE *in, FILE *out, FILE *diff);
-extern int lib_hunk_next(HUNK *hp, FILE *in);
-extern int lib_hunk_getc(HUNK *hp, FILE *in);
-
-#ifdef LIB_FLIKI
-
-static char hunk_deletions_buffer[HUNK_MAX];
-static char hunk_additions_buffer[HUNK_MAX];
-
-static int validargs(int argc, char **argv);
-static int patch(FILE *in, FILE *out, FILE *diff);
-static int hunk_next(HUNK *hp, FILE *in);
-static int hunk_getc(HUNK *hp, FILE *in);
-static void hunk_show(HUNK *hp, FILE *out);
-
-
-#else
-
 char hunk_deletions_buffer[HUNK_MAX];
 char hunk_additions_buffer[HUNK_MAX];
 
@@ -140,6 +114,5 @@ extern int patch(FILE *in, FILE *out, FILE *diff);
 extern int hunk_next(HUNK *hp, FILE *in);
 extern int hunk_getc(HUNK *hp, FILE *in);
 extern void hunk_show(HUNK *hp, FILE *out);
-#endif
 
 #endif

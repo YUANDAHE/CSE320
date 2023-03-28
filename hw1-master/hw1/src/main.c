@@ -23,8 +23,16 @@ int main(int argc, char **argv)
         USAGE(*argv, EXIT_FAILURE);
     if(global_options == HELP_OPTION)
         USAGE(*argv, EXIT_SUCCESS);
-    // TO BE IMPLEMENTED
-    return EXIT_FAILURE; 
+    
+    FILE *diff = fopen(diff_filename, "r");
+    if (diff == NULL) {
+        fprintf(stderr, "open diff file %s fail", diff_filename);
+        return EXIT_FAILURE;
+    }
+    if (patch(stdin, stdout, diff) < 0) {
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS; 
 }
 
 /*

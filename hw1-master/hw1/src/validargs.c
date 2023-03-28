@@ -22,7 +22,46 @@
  * containing the diffs to be used.
  */
 
+static int mystrcmp(const char* str1, const char* str2) {  
+    while ((*str1) && (*str1 == *str2)) {  
+        str1++;  
+        str2++;  
+    }
+
+    if (*str1 > *str2) { 
+        return 1;
+    } else if (*str1 < *str2) {
+        return -1;  
+    }
+
+    return 0;
+}  
+
 int validargs(int argc, char **argv) {
-    // TO BE IMPLEMENTED.
-    abort();
+    if (argc < 2) {
+        return -1;
+    }
+    
+    if (mystrcmp(*(argv+1), "-h") == 0) {
+        global_options = HELP_OPTION;
+        return 0;
+    }
+    
+    for (int i = 1; i < argc; i++) {
+        if (mystrcmp(*(argv+i), "-n") == 0) {
+            global_options |= NO_PATCH_OPTION;
+        } else if (mystrcmp(*(argv+i), "-q") == 0) {
+            global_options |= QUIET_OPTION;
+        } else {
+            if (i < argc - 1) {
+                return -1;
+            }
+            if (i == argc - 1) {
+                diff_filename = *(argv+i);
+                return 0;
+            }
+        }
+    }
+
+   return -1;
 }

@@ -5,6 +5,256 @@
 #include "global.h"
 #include "debug.h"
 
+// current line of diff file
+static int cur_diff_line_num = 1;
+static int serial;
+
+static int infile_next_line;
+static int outfile_cur_line;
+
+struct {
+    int error;
+    int begin_char;
+    int deletions;
+    int additions;
+    int dashes;
+    int deletions_buffer_index;
+    int additions_buffer_index;
+    short cur_add_line_len;
+    short cur_delete_line_len;
+} hunk_state;
+
+static int myisdigit(int c) {
+    if (c < '0' || c > '9') {
+        return 0;
+    }
+    return 1;
+}
+
+static int get_hunk_type(char c) {
+    if (c == 'a') {
+        return HUNK_APPEND_TYPE;
+    }
+    if (c == 'd') {
+        return HUNK_DELETE_TYPE;
+    }
+    if (c == 'c') {
+        return HUNK_CHANGE_TYPE;
+    }
+    return HUNK_NO_TYPE;
+}
+
+static int read_range(FILE *in, int *start, int *end) {
+    int *num = start;
+    while (1) {
+        int c = fgetc(in);
+        if (feof(in)) {
+            return EOF;
+        }
+
+        if (myisdigit(c)) {
+            *num = *num*10+(c-'0');
+            continue;
+        }
+        if (c == ',') {
+            *end = 0;
+            num = end;
+            continue;
+        }
+
+        ungetc(c, in);
+        break;
+    }
+
+    return 0;
+}
+
+static int is_valid_hunk(HUNK *hp) {
+    // "%da%d\n", <num1>, <num2>
+    // "%da%d,%d\n", <num1>, <num2>, <num3>
+    if (hp->type == HUNK_APPEND_TYPE) {
+        if (hp->old_end >= 0) {
+            error("%d", hp->old_end);
+            return 0;
+        }
+        if (hp->new_end >= 0 && hp->new_end < hp->new_start) {
+            error("%d,%d", hp->new_start, hp->new_end);
+            return 0;
+        }
+    }
+
+    // "%dd%d\n", <num1>, <num2>
+    // "%d,%dd%d\n", <num1>, <num2>, <num3>
+    if (hp->type == HUNK_DELETE_TYPE) {
+        if (hp->new_end >= 0) {
+            error("%d", hp->new_end);
+            return 0;
+        }
+        if (hp->old_end >= 0 && hp->old_end < hp->old_start) {
+            error("%d,%d", hp->old_start, hp->old_end);
+            return 0;
+        }
+    }
+
+    if (hp->type == HUNK_CHANGE_TYPE) {
+        if (hp->old_end >= 0 && hp->old_end < hp->old_start) {
+            error("%d,%d", hp->old_start, hp->old_end);
+            return 0;
+        }
+
+        if (hp->new_end >= 0 && hp->new_end < hp->new_start) {
+            error("%d,%d", hp->new_start, hp->new_end);
+            return 0;
+        }
+    }
+    
+    return 1;
+}
+
+static int calc_line_count(int end, int start) {
+    if (end < 0) {
+        return 1;
+    }
+
+    return end - start + 1;
+}
+
+static int skip_dashes(FILE *in) {
+    for (int i = 0; i < 3; i++) {
+        int c = fgetc(in);
+        if (feof(in)) {
+            return EOF;
+        }
+        if (i < 2 && c != '-') {
+            return ERR;
+        }
+        if (i == 2 && c != '\n') {
+            return ERR;
+        }
+    }
+
+    return 0;
+}
+
+static void init_hunk(HUNK *hp) {
+    hp->old_start = 0;
+    hp->old_end = -1; // not exist
+    hp->new_start = 0;
+    hp->new_end = -1; // not exist
+}
+
+static void reset_hunk_state() {
+    hunk_state.error = 0;
+    hunk_state.additions = 0;
+    hunk_state.deletions = 0;
+    hunk_state.begin_char = 0;
+    hunk_state.dashes = 0;
+    hunk_state.deletions_buffer_index = 2;
+    hunk_state.additions_buffer_index = 2;
+     hunk_state.cur_delete_line_len = 0;
+    hunk_state.cur_add_line_len = 0;
+
+    for (int i = 0; i < HUNK_MAX; i++) {
+        *(hunk_deletions_buffer+i)=0;
+    }
+    for (int i = 0; i < HUNK_MAX; i++) {
+        *(hunk_additions_buffer+i)=0;
+    }
+}
+
+static void save_addition_char(char c) {
+    if (hunk_state.additions_buffer_index >= HUNK_MAX - 2) {
+        return;
+    }
+    *(hunk_additions_buffer+hunk_state.additions_buffer_index) = c;
+    hunk_state.additions_buffer_index++;
+    hunk_state.cur_add_line_len++;
+    if (c == '\n' || hunk_state.additions_buffer_index == HUNK_MAX - 2) {
+        int start = hunk_state.additions_buffer_index - hunk_state.cur_add_line_len - 2;
+        char *len_buf = (char *)&hunk_state.cur_add_line_len;
+        *(hunk_additions_buffer+start) = *(len_buf + 0);
+        *(hunk_additions_buffer+start+1) = *(len_buf + 1);
+
+        if (c == '\n') {
+            hunk_state.additions_buffer_index += 2;
+            hunk_state.cur_add_line_len = 0;
+        }
+    }
+}
+
+
+static void save_deletion_char(char c) {
+    if (hunk_state.deletions_buffer_index >= HUNK_MAX - 2) {
+        return;
+    }
+    *(hunk_deletions_buffer+hunk_state.deletions_buffer_index) = c;
+    hunk_state.deletions_buffer_index++;
+    hunk_state.cur_delete_line_len++;
+    if (c == '\n' || hunk_state.deletions_buffer_index == HUNK_MAX - 2) {
+        int start = hunk_state.deletions_buffer_index - hunk_state.cur_delete_line_len - 2;
+        char *len_buf = (char *)&hunk_state.cur_delete_line_len;
+        *(hunk_deletions_buffer+start) = *(len_buf + 0);
+        *(hunk_deletions_buffer+start+1) = *(len_buf + 1);
+
+        if (c == '\n') {
+            hunk_state.deletions_buffer_index += 2;
+            hunk_state.cur_delete_line_len = 0;
+        }
+    }
+}
+
+
+static int hunk_getc_help(FILE *in) {
+    while (1) {
+        int c = fgetc(in);
+        if (feof(in)) {
+            return EOF;
+        }
+        if (hunk_state.begin_char) {
+            if (hunk_state.begin_char == '>') {
+                save_addition_char(c);
+            } else {
+                save_deletion_char(c);
+            }
+            if (c == '\n') {
+                hunk_state.begin_char = 0;
+                cur_diff_line_num++;
+            }
+            return c;
+        }
+
+        if (c == '>' || c == '<') {
+            hunk_state.begin_char = c;
+            c = fgetc(in);
+            if (feof(in)) {
+                return EOF;
+            }
+            if (c != ' ') {
+                return ERR;
+            }
+            continue;
+        }
+        
+        if (c == '-') {
+            if (hunk_state.dashes) {
+                return ERR;
+            }
+            int ret = skip_dashes(in);
+            if (ret < 0) {
+                return ret;
+            }
+            hunk_state.dashes = 1;
+            cur_diff_line_num++;
+            continue;
+        }
+
+        ungetc(c, in);
+        break;
+    }
+
+    return EOS;
+}
+
 /**
  * @brief Get the header of the next hunk in a diff file.
  * @details This function advances to the beginning of the next hunk
@@ -21,8 +271,69 @@
  */
 
 int hunk_next(HUNK *hp, FILE *in) {
-    // TO BE IMPLEMENTED
-    abort();
+    // skip data
+    while (1) {
+        int ret = hunk_getc_help(in);
+        if (ret == EOS) {
+            break;
+        }
+        if (ret < 0) {
+            return ret;
+        }
+    }
+
+    init_hunk(hp);
+
+    int c = fgetc(in);
+    if (feof(in)) {
+        return EOF;
+    }
+
+    // first char must digital
+    if (!myisdigit(c)) {
+        error("invalid hunk, line %d", cur_diff_line_num);
+        return ERR;
+    }
+    ungetc(c, in);
+
+    // read old range
+    int ret = read_range(in, &(hp->old_start), &(hp->old_end));
+    if (ret != 0) {
+        error("invalid hunk, line %d", cur_diff_line_num);
+        return ret;
+    }
+
+    // read command
+    c = fgetc(in);
+    hp->type = get_hunk_type(c);
+    if (hp->type == HUNK_NO_TYPE) {
+        error("invalid hunk, line %d", cur_diff_line_num);
+        return ERR;
+    }
+
+    // read new range
+    ret = read_range(in, &(hp->new_start), &(hp->new_end));
+    if (ret != 0) {
+        error("invalid hunk, line %d", cur_diff_line_num);
+        return ret;
+    }
+
+    // read line break
+    c = fgetc(in);
+    if (c != '\n') {
+        error("invalid hunk, line %d", cur_diff_line_num);
+        return ERR;
+    }
+
+    if (!is_valid_hunk(hp)) {
+        error("invalid hunk, line %d", cur_diff_line_num);
+        return ERR;
+    }
+
+    hp->serial = ++serial;
+    reset_hunk_state();
+    cur_diff_line_num++;
+    return 0;
 }
 
 /**
@@ -60,8 +371,38 @@ int hunk_next(HUNK *hp, FILE *in) {
  */
 
 int hunk_getc(HUNK *hp, FILE *in) {
-    // TO BE IMPLEMENTED
-    abort();
+    if (hunk_state.error) {
+        return ERR;
+    }
+
+    int c = hunk_getc_help(in);
+    if (c == EOF) {
+        return ERR;
+    }
+
+    return c;
+}
+
+static int print_hunk_data(char begin_char, char *buf, FILE *out) {
+    int index = 0;
+    while (1) {
+        short len = *((short *)(buf+index));
+         index += 2;
+        if (len == 0) {
+            break;
+        }
+
+        fputc(begin_char, out);
+        fputc(' ', out);
+        for (int i = 0; i < len; i++) {
+            fputc(*(buf+index), out);
+            index++;
+        }
+    }
+    if (index >= HUNK_MAX-2) {
+        fprintf(out, "...\n");
+    }
+    return index;
 }
 
 /**
@@ -94,8 +435,213 @@ int hunk_getc(HUNK *hp, FILE *in) {
  */
 
 void hunk_show(HUNK *hp, FILE *out) {
-    // TO BE IMPLEMENTED
-    abort();
+    char cmd = 'a';
+    if (hp->type == HUNK_DELETE_TYPE) {
+        cmd = 'd';
+    } else {
+        cmd = 'c';
+    }
+    if (hp->old_end >= 0 && hp->new_end >= 0) {
+        fprintf(out, "%d,%d%c%d,%d\n", hp->old_start, hp->old_end, cmd, hp->new_start, hp->new_end);
+    } else if (hp->old_end >= 0) {
+        fprintf(out, "%d,%d%c%d\n", hp->old_start, hp->old_end, cmd, hp->new_start);
+    } else if (hp->new_end >= 0) {
+        fprintf(out, "%d%c%d,%d\n", hp->old_start, cmd, hp->new_start, hp->new_end);
+    } else {
+        fprintf(out, "%d%c%d\n", hp->old_start, cmd, hp->new_start);
+    }
+    
+    if (print_hunk_data('<', hunk_deletions_buffer, out)) {
+        short len = *((short *)hunk_additions_buffer);
+        if (len > 0) {
+            fprintf(out, "---\n");
+        }
+    }
+    print_hunk_data('>', hunk_additions_buffer, out);
+}
+
+static void outputc(char c, FILE *out) {
+    if (global_options & NO_PATCH_OPTION) {
+        return;
+    }
+    fputc(c, out);
+}
+
+static int copy_lines(FILE *in, FILE *out, int num) {
+    for (int i = 0; i < num; i++) {
+        while (1) {
+            int c = getc(in);
+            if (feof(in)) {
+                return 0;
+            }
+            outputc(c, out);
+            if (c == '\n') {
+                infile_next_line++;
+                outfile_cur_line++;
+                break;
+            }
+        }
+    }
+
+    return 1;
+}
+
+static int is_outfile_line_ok(HUNK *hp) {
+    int new_end = hp->new_end;
+    if (new_end < 0) {
+        new_end = hp->new_start;
+    }
+    if (outfile_cur_line != new_end) {
+        error("%d %d", outfile_cur_line, new_end);
+        return 0;
+    }
+
+    return 1;
+}
+
+static int patch_change(HUNK *hp, FILE *in, FILE *out, FILE *diff) {
+    if (infile_next_line > hp->old_start) {
+        error(" %d > %d", infile_next_line, hp->old_start);
+        return -1;
+    }
+    if (hp->old_start - infile_next_line > 0) {
+        if (!copy_lines(in, out, hp->old_start - infile_next_line)) {
+            error("copy_lines");
+            return -1;
+        }
+    }
+    
+    int deletions = calc_line_count(hp->old_end, hp->old_start);
+    int additions = calc_line_count(hp->new_end, hp->new_start);
+    for (int i = 0; i < deletions; i++) {
+        while (1) {
+            int c = hunk_getc(hp, diff);
+            if (c < 0) {
+                error("hunk_getc %d", c);
+                return -1;
+            }
+            if (c != '\n' && hunk_state.begin_char != '<') {
+                error("begin_char %c", hunk_state.begin_char);
+                return -1;
+            }
+            int read_char = fgetc(in);
+            if (read_char != c) {
+                error("%c != %c", read_char, c);
+                return -1;
+            }
+            if (c == '\n') {
+                infile_next_line++;
+                break;
+            }
+        }
+    }
+    for (int i = 0; i < additions; i++) {
+        while (1) {
+            int c = hunk_getc(hp, diff);
+            if (c < 0) {
+                error("hunk_getc %d", c);
+                return -1;
+            }
+            if (c != '\n' && hunk_state.begin_char != '>') {
+                error("begin_char %c", hunk_state.begin_char);
+                return -1;
+            }
+            if (!hunk_state.dashes) {
+                error("no dashes");
+                return -1;
+            }
+            outputc(c, out);
+            if (c == '\n') {
+                outfile_cur_line++;
+                break;
+            }
+        }
+    }
+
+    if (!is_outfile_line_ok(hp)) {
+        return -1;
+    }
+    return 0;
+}
+
+static int patch_delete(HUNK *hp, FILE *in, FILE *out, FILE *diff) {
+    if (infile_next_line > hp->old_start) {
+        return -1;
+    }
+    if (hp->old_start - infile_next_line > 0) {
+        if (!copy_lines(in, out, hp->old_start - infile_next_line)) {
+            return -1;
+        }
+    }
+    
+    int deletions = calc_line_count(hp->old_end, hp->old_start);
+    for (int i = 0; i < deletions; i++) {
+        while (1) {
+            int c = hunk_getc(hp, diff);
+            if (c < 0) {
+                return -1;
+            }
+            if (c != '\n' && hunk_state.begin_char != '<') {
+                return -1;
+            }
+            if (fgetc(in) != c) {
+                return -1;
+            }
+            if (c == '\n') {
+                infile_next_line++;
+                break;
+            }
+        }
+    }
+
+    if (!is_outfile_line_ok(hp)) {
+        return -1;
+    }
+    return 0;
+}
+
+static int patch_append(HUNK *hp, FILE *in, FILE *out, FILE *diff) {
+    if (infile_next_line-1 > hp->old_start) {
+        error(" %d -1 > %d", infile_next_line-1, hp->old_start);
+        return -1;
+    }
+
+    if (!copy_lines(in, out, hp->old_start - infile_next_line+1)) {
+        error("copy_lines");
+        return -1;
+    }
+
+    int additions = calc_line_count(hp->new_end, hp->new_start);
+    for (int i = 0; i < additions; i++) {
+        while (1) {
+            int c = hunk_getc(hp, diff);
+            if (c < 0) {
+                return -1;
+            }
+            if (c != '\n' && hunk_state.begin_char != '>') {
+                return -1;
+            }
+            outputc(c, out);
+            if (c == '\n') {
+                outfile_cur_line++;
+                break;
+            }
+        }
+    }
+
+    if (!is_outfile_line_ok(hp)) {
+        return -1;
+    }
+    return 0;
+}
+
+static int output_error(const char *msg) {
+    if (global_options & QUIET_OPTION) {
+        return 0;
+    }
+    fprintf(stderr, "%s", msg);
+    fputc('\n', stderr);
+    return 1;
 }
 
 /**
@@ -147,6 +693,42 @@ void hunk_show(HUNK *hp, FILE *out) {
  */
 
 int patch(FILE *in, FILE *out, FILE *diff) {
-    // TO BE IMPLEMENTED
-    abort();
+    infile_next_line = 1;
+    outfile_cur_line = 0;
+    HUNK hunk;
+    while (1) {
+        int ret = hunk_next(&hunk, diff);
+        if (ret == EOF) {
+            break;
+        }
+        if (ret < 0) {
+            output_error("hunk_next fail");
+            return -1;
+        }
+
+        if (hunk.type == HUNK_CHANGE_TYPE) {
+            if (patch_change(&hunk, in, out, diff) < 0) {
+                if (output_error("patch change fail")) {
+                    hunk_show(&hunk, stderr);
+                }
+                return -1;
+            }
+        } else if (hunk.type == HUNK_DELETE_TYPE) {
+            if (patch_delete(&hunk, in, out, diff) < 0) {
+                if (output_error("patch delete fail")) {
+                    hunk_show(&hunk, stderr);
+                }
+                return -1;
+            }
+        } else {
+            if (patch_append(&hunk, in, out, diff) < 0) {
+                if (output_error("patch append fail")) {
+                    hunk_show(&hunk, stderr);
+                }
+                return -1;
+            }
+        }
+    }
+
+    return 0;
 }
