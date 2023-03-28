@@ -1,0 +1,26 @@
+USAGE: bin/fliki [-h] [-n] [-q] DIFF_FILE
+   -h       Help: displays this help menu.
+   -n       Dry run: no patched output is produced.
+   -q       Quiet mode: no error output is produced.
+
+If -h is specified, then it must be the first option on the command line, and any
+other options are ignored.
+
+If -h is not specified, then a filename DIFF_FILE must be the last argument.  In this case,
+the program reads the DIFF_FILE, which is assumed to be in the traditional format
+produced by 'diff' and it applies the edits specified therein to lines of text read
+from stdin.  The patched result is written to stdout and any error reports are written
+to stderr.
+
+If the program succeeds in applying all the patches without any errors, then it exits
+with exit code EXIT_SUCCESS.  Otherwise, the program exits with EXIT_FAILURE after issuing
+an error report on stderr.  In case of an error, the output that is produced on stdout may
+be truncated at the point at which the error was detected.
+
+If the -n option is specified, then the program performs a 'dry run' in which only error
+reports are produced (on stderr) and no patched output is produced on stdout.
+
+If the -q option is specified, then the program does not produce any error reports on
+stderr, although it still exits with EXIT_FAILURE should an error occur.
+
+

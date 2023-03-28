@@ -1,0 +1,14 @@
+1c1
+< first line in file 1.
+---
+> first line in file 2.
+3,4d2
+< third line only here.
+< fourth line only here.
+7c5,6
+< eight line in file 1.
+---
+> seventh line in file 2.
+> eight line in file 2.
+8a8
+> tenth line only in file 2.

@@ -1,0 +1,71 @@
+43a44
+>     "greeting": "Hello, Cecile Nielsen! You have 1 unread messages.",
+59a61,62
+>     "address": "317 Ruby Street, Greenwich, Kentucky, 4014",
+>     "about": "Aliqua nulla culpa deserunt magna ad pariatur irure non ad pariatur. Laborum ad fugiat et anim mollit enim ullamco sunt laboris pariatur aliqua. Mollit deserunt excepteur cupidatat dolore qui exercitation.\r\n",
+103a107
+>     "about": "Officia adipisicing dolor velit duis aute Lorem cillum ex occaecat est. Anim magna sunt minim magna non eu eu reprehenderit quis nulla et ad. Dolor consequat tempor culpa eiusmod excepteur. Excepteur cillum dolore fugiat duis veniam magna et laboris magna et excepteur deserunt irure. Proident consectetur eiusmod cupidatat minim aute officia cupidatat non non.\r\n",
+114a119
+>     ],
+127a133
+>     ],
+128a135,137
+>     "favoriteFruit": "strawberry"
+>   },
+>   {
+130a140,142
+>     "guid": "d36d7ec1-66d6-4ac3-b231-bcd331404e47",
+>     "isActive": true,
+>     "balance": "$2,471.71",
+133a146
+>     "name": "Murray Wright",
+174a188,190
+>     "picture": "http://placehold.it/32x32",
+>     "age": 38,
+>     "eyeColor": "brown",
+207a224,229
+>     "greeting": "Hello, Gabrielle Walter! You have 4 unread messages.",
+>     "favoriteFruit": "strawberry"
+>   },
+>   {
+>     "_id": "63dd911d84e04a59cfaf3244",
+>     "index": 5,
+211a234,235
+>     "age": 38,
+>     "eyeColor": "green",
+212a237,239
+>     "gender": "male",
+>     "company": "RAMEON",
+>     "email": "martinadkins@rameon.com",
+259a287,317
+>     "about": "Cillum consequat veniam elit deserunt. Adipisicing reprehenderit dolor eu aliqua eiusmod reprehenderit magna aliquip ex culpa. Ullamco amet deserunt nostrud est aute do commodo sint labore do aliquip sit. Id aliquip anim exercitation laborum enim ea proident sit dolor labore anim eiusmod reprehenderit. Occaecat fugiat tempor elit qui commodo deserunt aute qui ea ullamco exercitation est. Ex amet adipisicing ea magna velit excepteur eiusmod sit consectetur. Proident deserunt veniam adipisicing mollit excepteur.\r\n",
+>     "registered": "2017-06-12T07:55:45 +04:00",
+>     "latitude": 64.907995,
+>     "longitude": 129.035257,
+>     "tags": [
+>       "irure",
+>       "consectetur",
+>       "voluptate",
+>       "ea",
+>       "commodo",
+>       "ad",
+>       "excepteur"
+>     ],
+>     "friends": [
+>       {
+>         "id": 0,
+>         "name": "Pearlie Cash"
+>       },
+>       {
+>         "id": 1,
+>         "name": "Orr Roach"
+>       },
+>       {
+>         "id": 2,
+>         "name": "Howard Rhodes"
+>       }
+>     ],
+>     "greeting": "Hello, Edna Huffman! You have 8 unread messages.",
+>     "favoriteFruit": "strawberry"
+>   }
+> ]
